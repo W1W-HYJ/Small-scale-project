@@ -348,3 +348,39 @@ transparent background. Printed artwork is thick and interior; decoration is thi
 mask) inside a hidden BrowserWindow, because that code only exists in a browser context. It is the
 difference between "the import path looks right" and "the import path produced a 607x761 sprite
 with 35 % transparency from a white-background picture".
+
+## 14. Removing click-through (this supersedes §3 and the mask work in §13)
+
+The pet used to keep a wider window than the sprite — the extra strip on the left held the
+notification bubble — and made the empty part click-through by toggling
+`setIgnoreMouseEvents(true, { forward: true })` as the cursor crossed transparent pixels. That
+toggle is the whole problem:
+
+- it costs a renderer → main IPC hop plus a `WS_EX_TRANSPARENT` change on the window;
+- a button press that arrives **inside that window** goes to the desktop, because the window is
+  still transparent at that instant, while the matching release — arriving a few milliseconds
+  later — lands on the now-interactive window;
+- the renderer therefore sees `pointerup` with no `pointerdown`, which its click-vs-drag logic
+  correctly rejects: no panel, no drag, no context menu. Cursor jitter along the sprite's outline
+  re-triggers the toggle, so several clicks in a row can all be swallowed.
+
+Diagnosis was only possible because every press is logged with its target and position; the telling
+signature was a run of `pointerup ignored wasDragging=false hasStart=false` lines with no
+`pointerdown` between them.
+
+The fix is not a smarter toggle, it is having nothing to toggle: the window is now exactly as wide
+as the sprite, the bubble is drawn **over** the artwork with a downward tail, and all of
+`setIgnoreMouseEvents` (renderer logic, preload API, main-process IPC handler) is deleted. Sprites
+are trimmed to their content, so the covered area is essentially "the pet" — the desktop around it
+is untouched. Bbox hit-testing and mask hole-filling are consequently gone too: with a tight
+window there is no per-pixel decision left to make.
+
+Two related fixes from the same investigation, both verified by killing the renderer on purpose:
+
+- **A crashed renderer used to leave a painted-but-dead window.** `render-process-gone` now
+  recreates the pet window (new window first, then destroy the old one, so the app never has zero
+  windows and quits); `unresponsive` for 5 s does the same. Skin, badge and position come back
+  because all state lives in the main process.
+- **Reloading the page was not enough.** After `reload()` the window kept `WS_EX_TRANSPARENT` and
+  Chromium's mouse-forwarding hook did not survive, so the pet was visible and completely deaf to
+  input. That is why the recovery recreates the window instead of reloading the page.

@@ -75,21 +75,24 @@ body.dragging #pet-wrap {
 
 /* --- new-item bubble --------------------------------------------------- */
 
+/* Drawn *on top of* the sprite: the window is only as wide as the pet, so there is
+   no empty strip to put a bubble in — and no empty strip means no click-through,
+   which is what used to swallow clicks. The tail points down at her head. */
 #bubble {
   position: absolute;
-  left: 0;
-  bottom: 92px;
-  width: 196px;
+  left: 6px;
+  right: 6px;
+  top: 0;
   box-sizing: border-box;
   padding: 9px 11px;
   border-radius: 14px;
-  background: rgba(22, 24, 31, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+  background: rgba(22, 24, 31, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.42);
   color: #eef1f7;
   opacity: 0;
-  transform: translateY(8px) scale(0.96);
-  transform-origin: right bottom;
+  transform: translateY(-6px) scale(0.96);
+  transform-origin: center bottom;
   transition: opacity 0.28s ease, transform 0.28s ease;
   pointer-events: none;
 }
@@ -99,18 +102,19 @@ body.dragging #pet-wrap {
   transform: none;
 }
 
-/* Tail pointing at the pet. */
+/* Tail pointing down at the pet. */
 #bubble::after {
   content: "";
   position: absolute;
-  right: -6px;
-  bottom: 16px;
+  left: 50%;
+  bottom: -6px;
+  margin-left: -6px;
   width: 12px;
   height: 12px;
-  background: rgba(22, 24, 31, 0.92);
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  transform: rotate(-45deg);
+  background: rgba(22, 24, 31, 0.94);
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  transform: rotate(45deg);
 }
 
 #bubble-count {

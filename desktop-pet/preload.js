@@ -15,7 +15,6 @@ const subscribe = (channel, callback) => {
 contextBridge.exposeInMainWorld('pet', {
   dragStart: () => ipcRenderer.send('pet:drag-start'),
   dragEnd: () => ipcRenderer.send('pet:drag-end'),
-  setIgnoreMouse: (ignore) => ipcRenderer.send('pet:set-ignore-mouse', ignore),
   activate: () => ipcRenderer.send('pet:activate'),
   openSkins: () => ipcRenderer.send('pet:open-skins'),
   quit: () => ipcRenderer.send('pet:quit'),

@@ -1,16 +1,17 @@
 'use strict'
 
-// Pet window renderer: drag the pet, keep the area around it click-through, show
-// the unread badge + new-item bubble, and open the digest panel.
+// Pet window renderer: drag the pet, show the unread badge + new-item bubble, and
+// open the digest panel.
 //
 // The sprite is not fixed any more: the main process picks a skin and pushes it in
 // as a data: URL, so any imported picture works with no pre-generation step.
 //
-// Click-through is decided by the sprite's bounding box (see updateHitTest) rather
-// than per transparent pixel — per-pixel looked tidier but swallowed presses that
-// landed on transparent pixels *inside* the drawing, which is what made the pet
-// feel frozen. Sprites are trimmed to their content, so the box is close to the
-// silhouette; the bubble strip beside it stays fully click-through.
+// There is no click-through. The window is exactly as wide as the sprite, so there
+// is no empty strip that would need to pass clicks to the desktop — and toggling
+// click-through turned out to be the thing that swallowed presses: the state change
+// costs an IPC round trip, and a press arriving inside it went to the desktop while
+// its release still landed on the pet. That produced exactly the "点不出来、右键也退
+// 不出去" reports. The bubble is drawn over the sprite instead of beside it.
 
 const img = document.getElementById('pet')
 const bubble = document.getElementById('bubble')
@@ -19,85 +20,14 @@ const bubbleTitle = document.getElementById('bubble-title')
 const badge = document.getElementById('badge')
 const menu = document.getElementById('menu')
 
-let ignoring = false
 let dragging = false
 let menuOpen = false
 let pointerStart = null
 let bubbleTimer = null
 let menuTimer = null
 
-/** A menu that cannot be dismissed is a trap: a click on a transparent pixel goes
- *  to the desktop and never reaches the page, so nothing closes it. Time it out. */
+/** A menu that cannot be dismissed is a trap: if nothing else can close it, time it out. */
 const MENU_AUTO_CLOSE_MS = 20000
-/**
- * Delay before a "gap" verdict turns the window click-through.
- *
- * The hit test flips on every mouse move, and near an outline one pixel of jitter
- * is enough to flip it. If that flip lands between press and release, the press is
- * swallowed by the desktop while the release still arrives — the pet looks frozen
- * exactly where it is drawn. Waiting a beat, and never flipping while a button is
- * held, keeps the press/release pair together.
- */
-const GAP_DELAY_MS = 180
-
-let gapTimer = null
-
-function setIgnore(next, reason) {
-  if (next === ignoring) return
-  ignoring = next
-  window.pet.log(`ignore ${next} (${reason})`)
-  window.pet.setIgnoreMouse(next)
-}
-
-/** Becoming click-through is deferred; becoming interactive is immediate. */
-function setIgnoreSoon(next, reason) {
-  if (next === false) {
-    if (gapTimer) {
-      clearTimeout(gapTimer)
-      gapTimer = null
-    }
-    setIgnore(false, reason)
-    return
-  }
-  if (ignoring || gapTimer) return
-  gapTimer = setTimeout(() => {
-    gapTimer = null
-    setIgnore(true, reason)
-  }, GAP_DELAY_MS)
-}
-
-function updateHitTest(clientX, clientY, buttons) {
-  if (dragging) {
-    setIgnoreSoon(false, 'dragging')
-    return
-  }
-  if (menuOpen) {
-    setIgnoreSoon(false, 'menu-open')
-    return
-  }
-  // Never change the click-through state while a mouse button is down: that is
-  // exactly the window in which the press/release pair has to stay together.
-  if (buttons) return
-
-  // Interactivity is decided by the sprite's bounding box, not per pixel.
-  //
-  // Per-pixel hit testing looked nicer on paper but was unreliable in practice: a
-  // press on any transparent pixel *inside* the drawing (hair strands, the gap
-  // between an arm and the torso, between the legs) went to the desktop, so the
-  // window only ever saw the release — the pet appeared frozen exactly where it is
-  // drawn. Sprites are trimmed to their content, so the box is very close to the
-  // silhouette anyway; the price is that the few transparent holes inside the box
-  // no longer pass clicks through, and the win is that clicking the pet always
-  // works. The bubble strip to the left stays fully click-through, which is the
-  // large transparent area that actually matters.
-  const rect = img.getBoundingClientRect()
-  if (rect.width === 0 || rect.height === 0) {
-    setIgnoreSoon(false, 'no-rect')
-    return
-  }
-  const inside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom
-  setIgnoreSoon(!inside, inside ? 'sprite-box' : 'outside')
-}
 
 function closeMenu() {
   if (menuTimer) {
@@ -109,14 +39,9 @@ function closeMenu() {
   menu.hidden = true
 }
 
-window.addEventListener('mousemove', (event) => {
-  // event.buttons lets the hit test stay put while a button is held down.
-  updateHitTest(event.clientX, event.clientY, event.buttons)
-})
-
-// Every press gets a line, including the ones that land outside the image: "the
-// pet stopped responding" is almost always "pointerdown never fired", and that is
-// only distinguishable from the outside if the presses are recorded.
+// Every press gets a line: "the pet stopped responding" is almost always
+// "pointerdown never fired", and that is only distinguishable from outside if the
+// presses are recorded.
 window.addEventListener(
   'pointerdown',
   (event) => {
@@ -124,7 +49,7 @@ window.addEventListener(
     const inImg = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
     window.pet.log(
       `pointerdown b=${event.button} at=${Math.round(event.clientX)},${Math.round(event.clientY)} ` +
-        `tgt=${event.target === img ? 'img' : event.target?.id || event.target?.tagName} inImg=${inImg} ignoring=${ignoring}`,
+        `tgt=${event.target === img ? 'img' : event.target?.id || event.target?.tagName} inImg=${inImg}`,
     )
   },
   true,
@@ -156,7 +81,6 @@ img.addEventListener('pointerdown', (event) => {
   dragging = true
   pointerStart = { x: event.screenX, y: event.screenY, at: Date.now() }
   document.body.classList.add('dragging')
-  setIgnore(false, 'drag-start')
   img.setPointerCapture(event.pointerId)
   window.pet.dragStart()
 })
@@ -200,7 +124,6 @@ window.addEventListener('contextmenu', (event) => {
   if (dragging) return
   menuOpen = true
   menu.hidden = false
-  setIgnore(false, 'menu-open')
   if (menuTimer) clearTimeout(menuTimer)
   menuTimer = setTimeout(() => {
     window.pet.log('menu auto-closed after timeout')

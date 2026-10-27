@@ -12,8 +12,10 @@
 //  * Dragging is driven from this process with the cursor position rather than
 //    from renderer deltas, so the pet keeps up with the pointer even when the
 //    window moves out from under it, and it is immune to DPI rounding drift.
-//  * Regions where the sprite is transparent are made click-through from the
-//    renderer via setIgnoreMouseEvents, so the pet never blocks the desktop.
+//  * There is no click-through. The window is exactly as wide as the sprite, so the
+//    desktop is only covered where the pet is actually drawn. Toggling click-through
+//    used to swallow clicks (press arrived during the Windows style change), which
+//    is why it is gone rather than made cleverer.
 //  * All fetching happens here, never in a renderer: no page content is ever
 //    given a chance to run.
 
@@ -30,12 +32,10 @@ const { testConnection } = require('./core/llm')
 
 /** On-screen height of the pet itself, in DIP. */
 const PET_HEIGHT = 340
-/** Widest the sprite may get before it is scaled down to fit beside the bubble. */
+/** Widest the sprite may get before it is scaled down. */
 const MAX_SPRITE_WIDTH = 560
 /** Extra transparent space above the sprite so the idle bob has room. */
 const BOB_ROOM = 12
-/** Transparent strip on the left of the pet reserved for the bubble. */
-const BUBBLE_WIDTH = 208
 /** If the first paint never arrives, show the pet anyway after this long. */
 const SHOW_FALLBACK_MS = 1500
 /** DIP wobble from DIP<->physical rounding that is not worth correcting. */
@@ -338,10 +338,16 @@ function scheduleInitial() {
 // --- pet window -----------------------------------------------------------
 
 /**
- * Window geometry for a sprite: the pet is PET_HEIGHT tall, the sprite keeps its
- * aspect ratio, and the window is widened by BUBBLE_WIDTH on the left for the
- * notification bubble. A very wide sprite is scaled down so it cannot sprawl
- * across the desktop.
+ * Window geometry for a sprite: the pet is PET_HEIGHT tall and the window is
+ * exactly as wide as the sprite.
+ *
+ * It deliberately has no extra strip for the bubble any more. With a wider window
+ * the empty strip had to be made click-through, and toggling click-through costs an
+ * IPC round trip plus a Windows style change — a press that arrives inside that
+ * window is swallowed by the desktop while its release still lands, so the pet
+ * randomly ignores clicks (that was the recurring "点不出来、也退不出去"). Keeping
+ * the window tight to the sprite means the pet never needs click-through at all;
+ * the notification bubble is drawn on top of the sprite instead.
  */
 function geometryForSprite(sprite) {
   let spriteHeight = PET_HEIGHT
@@ -350,7 +356,7 @@ function geometryForSprite(sprite) {
     spriteHeight = Math.round(spriteHeight * (MAX_SPRITE_WIDTH / spriteWidth))
     spriteWidth = MAX_SPRITE_WIDTH
   }
-  return { width: spriteWidth + BUBBLE_WIDTH, height: spriteHeight + BOB_ROOM }
+  return { width: Math.max(120, spriteWidth), height: spriteHeight + BOB_ROOM }
 }
 
 function currentSkin() {
@@ -501,17 +507,6 @@ function createWindow() {
 
   petWin.webContents.on('did-finish-load', () => {
     diag('did-finish-load')
-    // A reloaded page starts with its own `ignoring = false`, but the window keeps
-    // whatever click-through mode the previous page last set. If the renderer died
-    // while the cursor was over transparent pixels, nothing would ever make the
-    // window interactive again — the pet would be visible and permanently dead to
-    // input. Reset it on every load.
-    try {
-      petWin.setIgnoreMouseEvents(false)
-      diag('mouse events reset to interactive after load')
-    } catch (error) {
-      diag(`reset ignore-mouse failed ${error?.message ?? String(error)}`)
-    }
     sendSkinToPet(currentSkin())
     broadcastSnapshot()
   })
@@ -850,10 +845,6 @@ ipcMain.on('pet:drag-end', () => {
     // The panel follows the pet so it never ends up stranded off-screen.
     if (panelWin && !panelWin.isDestroyed() && panelWin.isVisible()) panelWin.setBounds(panelBounds())
   }
-})
-
-ipcMain.on('pet:set-ignore-mouse', (_event, ignore) => {
-  if (petWin) petWin.setIgnoreMouseEvents(Boolean(ignore), { forward: true })
 })
 
 ipcMain.on('pet:activate', () => {

@@ -27,7 +27,7 @@ Everything runs in the main process; renderers only ever receive prepared JSON. 
 
 - **Drag it anywhere** with the left mouse button — across the desktop, across monitors.
 - **Remembers where you left it** (`%APPDATA%\Blob Pet\pet-state.json`), restored on the next launch.
-- **Transparent pixels are click-through** — the empty corners around the artwork do not swallow clicks meant for the desktop or the window underneath.
+- **The window is exactly as big as the sprite** — the desktop is only covered where the pet is actually drawn, so there is no stray rectangle eating clicks. (Click-through per transparent pixel was removed: toggling it cost an IPC round trip, and a press arriving inside that window went to the desktop while its release landed on the pet — the pet looked frozen. A tight window needs no such trick.)
 - **Never steals focus.** The window is created with `focusable: false` (`WS_EX_NOACTIVATE` on Windows), so clicking the pet does not pull focus away from whatever you are typing in.
 - **Click it to open the digest**, right-click for `查看摘要 / 立即刷新 / 退出桌宠`.
 - **Sits still while you hold it.** It floats gently when idle and never changes size — no surprise growing.
@@ -85,7 +85,8 @@ Thresholds are overridable:
 MATTE_BRIGHT=210 MATTE_SAT=22 MATTE_SHADOW_SAT=45 npm run matte
 ```
 
-`tools/mask.mjs` then bakes the packed hit-test mask (`assets/sprite-mask.js`) that drives click-through.
+`tools/mask.mjs` still produces `assets/sprite-mask.js`, but nothing loads it any more — the
+click-through it was built for is gone.
 
 Preview helper:
 
@@ -111,7 +112,7 @@ Everything lives at the top of `main.js`:
 
 - **The window is the artwork.** A frameless, transparent `BrowserWindow` is created exactly the size of the sprite, so the only visible thing is the PNG itself.
 - **Dragging is driven by the main process**, which samples `screen.getCursorScreenPoint()` and repositions the window — not by mouse deltas in the renderer. The pet therefore keeps up with the pointer even when the window moves out from under it, and it cannot drift on a fractional display scale. `setPosition` is fed integers only: Electron rejects fractional DIP with a conversion error.
-- **Click-through uses a baked bitmask**, not a canvas: a canvas that has drawn a `file://` image is tainted, so `getImageData()` throws. `tools/mask.mjs` packs one bit per pixel into `assets/sprite-mask.js`, which the renderer decodes with `atob()` and consults on every mouse move before toggling `setIgnoreMouseEvents`.
+- **No click-through, on purpose.** The window is exactly as wide as the sprite, so nothing needs to be handed to the desktop. The earlier design kept a wider window for the notification bubble and toggled `setIgnoreMouseEvents` as the cursor crossed transparent pixels; that toggle costs an IPC round trip plus a Windows style change, and a press landing inside it went to the desktop while the release still reached the pet. The symptom was a pet that ignored clicks at random ("点不出来，也退不出去"). The bubble is now drawn over the sprite instead.
 - **The size guard** keeps the pet from slowly inflating. On a 150 % display, every `setPosition` makes Windows re-round the window *size* as well as its position, and that rounding accumulates over a long drag. A `resize` handler restores the intended size — but only when the pointer is free, because resizing a window under a captured pointer cancels the capture and breaks the drag.
 - **The window is shown by whichever comes first**, `ready-to-show` or a fallback timer. Waiting only for `ready-to-show` means a renderer that never paints leaves an invisible pet running forever.
 - **Runtime diagnostics** are appended to `%APPDATA%\Blob Pet\pet-diag.log` (window geometry, display scale, drags, uncaught errors). A desktop pet has no devtools and no console, so this file is the only way to reconstruct what happened.
