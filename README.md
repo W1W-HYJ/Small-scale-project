@@ -30,7 +30,7 @@
 
 ### 快速开始
 
-**直接用（Windows）**：从 [Releases](https://github.com/W1W-SDJ/Small-scale-project/releases) 下载免安装包，解压后双击 `start-pet.cmd`。
+**直接用（Windows）**：从 [Releases](https://github.com/W1W-HYJ/Small-scale-project/releases) 下载免安装包，解压后双击 `start-pet.cmd`。
 
 > 程序未做代码签名。Windows 11 若开启 Smart App Control（强制模式），会静默拦截未签名的单文件 exe —— 所以分发以"文件夹版"为准（其中的 `electron.exe` 来自 Chromium 官方、带有效签名）。细节见 [desktop-pet/README.zh-CN.md](desktop-pet/README.zh-CN.md) 的「常见问题」。
 
